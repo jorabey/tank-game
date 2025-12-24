@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="uz">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Tanklar Jangi - Multiplayer</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="bg-gray-900 text-white overflow-hidden select-none touch-none">
+    <canvas
+      id="gameCanvas"
+      class="absolute top-0 left-0 w-full h-full z-0"
+    ></canvas>
+
+    <div
+      id="damageOverlay"
+      class="absolute inset-0 bg-red-600 opacity-0 pointer-events-none z-10 transition-opacity duration-100"
+    ></div>
+
+    <div id="uiLayer" class="absolute inset-0 z-20 pointer-events-none">
+      <div
+        id="toastContainer"
+        class="absolute top-20 left-1/2 transform -translate-x-1/2 flex flex-col gap-2 items-center w-full max-w-sm pointer-events-none"
+      ></div>
+
+      <div
+        id="killFeed"
+        class="absolute top-4 right-4 flex flex-col items-end gap-1 pointer-events-none text-sm font-bold text-shadow"
+      ></div>
+
+      <div
+        id="mainMenu"
+        class="pointer-events-auto absolute inset-0 flex flex-col items-center justify-center bg-gray-900/95 backdrop-blur-sm"
+      >
+        <h1
+          class="text-6xl font-black text-blue-500 mb-8 tracking-wider uppercase drop-shadow-lg"
+        >
+          Tanklar Jangi
+        </h1>
+        <div class="flex flex-col gap-4 w-64">
+          <button
+            id="btnShowCreate"
+            class="py-4 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold shadow-lg transition transform hover:scale-105"
+          >
+            YANGI O'YIN
+          </button>
+          <button
+            id="btnShowJoin"
+            class="py-4 bg-green-600 hover:bg-green-700 rounded-lg font-bold shadow-lg transition transform hover:scale-105"
+          >
+            O'YINGA QO'SHILISH
+          </button>
+        </div>
+      </div>
+
+      <div
+        id="createMenu"
+        class="pointer-events-auto hidden absolute inset-0 flex items-center justify-center bg-gray-900/95 backdrop-blur-sm"
+      >
+        <div
+          class="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl w-full max-w-md"
+        >
+          <h2 class="text-2xl font-bold mb-6 text-blue-400">
+            Yangi O'yin Sozlamalari
+          </h2>
+
+          <div class="space-y-4">
+            <input
+              type="text"
+              id="createNick"
+              placeholder="Nickname (Majburiy)"
+              class="w-full p-3 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 outline-none"
+            />
+
+            <div class="flex gap-2">
+              <input
+                type="number"
+                id="createMaxPlayers"
+                placeholder="Max"
+                value="10"
+                min="2"
+                max="20"
+                class="w-1/2 p-3 bg-gray-700 rounded border border-gray-600"
+              />
+              <input
+                type="number"
+                id="createTime"
+                placeholder="Min"
+                value="5"
+                min="1"
+                max="60"
+                class="w-1/2 p-3 bg-gray-700 rounded border border-gray-600"
+              />
+            </div>
+
+            <input
+              type="text"
+              id="createPass"
+              placeholder="Parol (Ixtiyoriy)"
+              class="w-full p-3 bg-gray-700 rounded border border-gray-600 outline-none"
+            />
+
+            <div class="flex items-center gap-2">
+              <span class="text-sm text-gray-400">Tank Rangi:</span>
+              <input
+                type="color"
+                id="createColor"
+                value="#3b82f6"
+                class="w-full h-10 cursor-pointer rounded"
+              />
+            </div>
+          </div>
+
+          <div class="flex gap-4 mt-8">
+            <button
+              id="btnBackFromCreate"
+              class="flex-1 py-3 bg-gray-600 hover:bg-gray-500 rounded font-bold"
+            >
+              Orqaga
+            </button>
+            <button
+              id="btnStartGame"
+              class="flex-1 py-3 bg-blue-600 hover:bg-blue-500 rounded font-bold"
+            >
+              Boshlash
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div
+        id="joinMenu"
+        class="pointer-events-auto hidden absolute inset-0 flex items-center justify-center bg-gray-900/95 backdrop-blur-sm"
+      >
+        <div
+          class="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl w-full max-w-md"
+        >
+          <h2 class="text-2xl font-bold mb-6 text-green-400">O'yinga Kirish</h2>
+
+          <div class="space-y-4">
+            <input
+              type="text"
+              id="joinId"
+              placeholder="O'yin ID (Majburiy)"
+              class="w-full p-3 bg-gray-700 rounded border border-gray-600 focus:border-green-500 outline-none uppercase"
+            />
+            <input
+              type="text"
+              id="joinNick"
+              placeholder="Nickname (Majburiy)"
+              class="w-full p-3 bg-gray-700 rounded border border-gray-600 focus:border-green-500 outline-none"
+            />
+            <input
+              type="text"
+              id="joinPass"
+              placeholder="Parol (Agar bo'lsa)"
+              class="w-full p-3 bg-gray-700 rounded border border-gray-600 outline-none"
+            />
+
+            <div class="flex items-center gap-2">
+              <span class="text-sm text-gray-400">Tank Rangi:</span>
+              <input
+                type="color"
+                id="joinColor"
+                value="#22c55e"
+                class="w-full h-10 cursor-pointer rounded"
+              />
+            </div>
+          </div>
+
+          <div class="flex gap-4 mt-8">
+            <button
+              id="btnBackFromJoin"
+              class="flex-1 py-3 bg-gray-600 hover:bg-gray-500 rounded font-bold"
+            >
+              Orqaga
+            </button>
+            <button
+              id="btnJoinGame"
+              class="flex-1 py-3 bg-green-600 hover:bg-green-500 rounded font-bold"
+            >
+              Kirish
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="gameHUD" class="hidden w-full h-full relative">
+        <div
+          class="absolute top-0 left-0 w-full p-2 flex justify-between items-start pointer-events-none"
+        >
+          <div
+            class="bg-gray-900/80 p-2 px-4 rounded-lg border border-gray-700 flex gap-4 items-center pointer-events-auto"
+          >
+            <div class="text-gray-300 font-mono text-sm">
+              ID:
+              <span
+                id="displayGameId"
+                class="text-yellow-400 font-bold select-all"
+                >---</span
+              >
+              <button
+                id="btnCopyId"
+                class="ml-2 text-gray-400 hover:text-white"
+              >
+                <i class="fas fa-copy"></i>
+              </button>
+            </div>
+            <div class="w-px h-4 bg-gray-600"></div>
+            <div id="gameTimer" class="text-xl font-bold font-mono">00:00</div>
+          </div>
+
+          <div
+            class="bg-gray-900/80 p-2 rounded-lg border border-gray-700 pointer-events-auto"
+          >
+            <div
+              class="text-xs text-gray-500 uppercase font-bold text-center mb-1"
+            >
+              Onlayn
+            </div>
+            <ul id="playerList" class="text-xs space-y-1 min-w-[100px]"></ul>
+          </div>
+        </div>
+
+        <button
+          id="btnExit"
+          class="pointer-events-auto absolute top-16 right-2 w-10 h-10 bg-red-600/80 hover:bg-red-600 rounded-full flex items-center justify-center shadow-lg text-white"
+        >
+          <i class="fas fa-sign-out-alt"></i>
+        </button>
+
+        <div
+          class="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-900/90 border border-gray-700 px-6 py-2 rounded-xl flex gap-8 pointer-events-none z-30"
+        >
+          <div class="text-center">
+            <div class="text-[10px] text-gray-500 font-bold">HP</div>
+            <div id="statHP" class="text-2xl font-black text-red-500">100</div>
+          </div>
+          <div class="w-px h-8 bg-gray-700"></div>
+          <div class="text-center">
+            <div class="text-[10px] text-gray-500 font-bold">XP</div>
+            <div id="statXP" class="text-2xl font-black text-blue-500">0</div>
+          </div>
+          <div class="w-px h-8 bg-gray-700"></div>
+          <div class="text-center">
+            <div class="text-[10px] text-gray-500 font-bold">K/D</div>
+            <div id="statKD" class="text-2xl font-black text-white">0/0</div>
+          </div>
+        </div>
+
+        <div
+          class="absolute bottom-4 right-4 bg-black/80 border-2 border-gray-600 rounded-lg overflow-hidden pointer-events-none w-[150px] h-[150px]"
+        >
+          <canvas
+            id="minimapCanvas"
+            width="150"
+            height="150"
+            class="w-full h-full"
+          ></canvas>
+        </div>
+
+        <div
+          id="joystickZone"
+          class="pointer-events-auto absolute bottom-8 left-8 w-32 h-32 rounded-full border-2 border-white/10 hidden md:hidden lg:hidden touch-none"
+        >
+          <div
+            id="joystickKnob"
+            class="absolute w-12 h-12 bg-blue-500/50 rounded-full top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 shadow-lg"
+          ></div>
+        </div>
+
+        <div
+          id="fireBtn"
+          class="pointer-events-auto absolute bottom-12 right-24 w-20 h-20 bg-red-600/40 border-4 border-red-500/60 rounded-full flex items-center justify-center active:bg-red-600/80 active:scale-95 transition hidden md:hidden lg:hidden touch-none"
+        >
+          <i class="fas fa-crosshairs text-2xl opacity-80"></i>
+        </div>
+      </div>
+
+      <div
+        id="respawnScreen"
+        class="hidden absolute inset-0 flex flex-col items-center justify-center bg-red-900/60 backdrop-blur-sm z-40 pointer-events-none"
+      >
+        <h2 class="text-5xl font-black text-red-500 drop-shadow-lg mb-2">
+          MAG'LUBIYAT
+        </h2>
+        <div class="text-2xl">
+          Qayta tirilish:
+          <span id="respawnTimer" class="text-yellow-400 font-mono text-4xl"
+            >5</span
+          >s
+        </div>
+        <p class="text-gray-300 mt-2 text-sm">Statistika saqlanib qoladi</p>
+      </div>
+
+      <div
+        id="gameOverScreen"
+        class="pointer-events-auto hidden absolute inset-0 flex flex-col items-center justify-center bg-gray-900/95 z-50"
+      >
+        <h2
+          class="text-5xl font-black text-yellow-500 mb-8 uppercase tracking-widest"
+        >
+          O'yin Tugadi
+        </h2>
+
+        <div
+          class="bg-gray-800 rounded-xl p-6 w-full max-w-2xl max-h-[60vh] overflow-y-auto border border-gray-700 shadow-2xl"
+        >
+          <table class="w-full text-left">
+            <thead class="bg-gray-700 text-gray-300">
+              <tr>
+                <th class="p-3 rounded-tl-lg">#</th>
+                <th class="p-3">O'yinchi</th>
+                <th class="p-3 text-center">Kill</th>
+                <th class="p-3 text-center">Death</th>
+                <th class="p-3 text-right rounded-tr-lg">XP</th>
+              </tr>
+            </thead>
+            <tbody
+              id="leaderboardBody"
+              class="divide-y divide-gray-700 text-sm"
+            ></tbody>
+          </table>
+        </div>
+
+        <div class="mt-8 text-center">
+          <p class="text-gray-500 mb-4">
+            Avtomatik chiqish: <span id="autoExitTimer">15</span>s
+          </p>
+          <button
+            onclick="location.reload()"
+            class="px-8 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold shadow-lg"
+          >
+            Menyuga Qaytish
+          </button>
+        </div>
+      </div>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>

@@ -1,0 +1,214 @@
+/* ================= GLOBAL SOZLAMALAR ================= */
+/* Brauzerning standart hoshiyalarini olib tashlaymiz */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  /* Matnni belgilashni taqiqlash (o'yin payti xalaqit bermasligi uchun) */
+  user-select: none;
+  -webkit-user-select: none;
+  /* Mobile uchun juda muhim: Bosganda ko'k rang chiqmasligi uchun */
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: #0f172a; /* To'q ko'k fon */
+  overflow: hidden; /* Scrollni bloklash */
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  /* Ekranni surish va zoomni bloklash - MOBILE UCHUN HAL QILUVCHI KOD */
+  touch-action: none;
+}
+
+/* ================= O'YIN ELEMENTLARI ================= */
+
+/* Canvas (O'yin maydoni) */
+#gameCanvas {
+  display: block;
+  background-color: #111; /* Agar canvas yuklanmasa qora fon */
+}
+
+/* Joystick Zonasi (Faqat Mobile uchun ko'rinadi) */
+#joystickZone {
+  /* Ekranda qat'iy joylashuv */
+  position: absolute;
+  bottom: 30px;
+  left: 30px;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  /* Touch hodisalarini o'tkazmaslik uchun */
+  touch-action: none;
+  z-index: 50; /* UI dan pastroq, lekin Canvasdan baland */
+}
+
+/* Joystick dastagi (Knob) */
+#joystickKnob {
+  position: absolute;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+  /* Markazga joylash */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none; /* Dastakni o'zi touch ni ushlab qolmasligi kerak */
+}
+
+/* O'q Otish Tugmasi (Fire Button) */
+#fireBtn {
+  position: absolute;
+  bottom: 40px;
+  right: 40px;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: rgba(220, 38, 38, 0.2);
+  border: 3px solid rgba(239, 68, 68, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 50;
+  touch-action: none;
+  transition: transform 0.1s ease;
+}
+
+#fireBtn:active {
+  background: rgba(220, 38, 38, 0.6);
+  transform: scale(0.95); /* Bosilganda kichrayish effekti */
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.8);
+}
+
+/* ================= HUD (UI) ELEMENTLARI ================= */
+
+/* Minimap */
+.minimap-container {
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+}
+
+/* Player List (Tablitsa) */
+#playerList li {
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ================= ANIMATSIYALAR ================= */
+
+/* Qizil Ekran (Jarohat olganda) */
+@keyframes flashRed {
+  0% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.damage-effect {
+  animation: flashRed 0.3s ease-out;
+}
+
+/* Toast Xabar chiqishi */
+.toast-enter {
+  animation: slideDown 0.3s ease-out forwards;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ================= KICHIK TELEFONLAR UCHUN MAXSUS (MEDIA QUERIES) ================= */
+
+/* Agar ekran balandligi 500px dan kichik bo'lsa (Telefon yonbosh qilib ushlanganda) */
+@media (max-height: 500px) {
+  /* Sarlavhani kichraytiramiz */
+  #mainMenu h1 {
+    font-size: 2.5rem; /* 6xl dan kichraytiramiz */
+    margin-bottom: 1rem;
+  }
+
+  /* Joystick va Fire tugmasini biroz chetga suramiz, barmoq xalaqit bermasligi uchun */
+  #joystickZone {
+    bottom: 20px;
+    left: 20px;
+    width: 100px; /* Kichikroq */
+    height: 100px;
+  }
+  #joystickKnob {
+    width: 40px;
+    height: 40px;
+  }
+
+  #fireBtn {
+    bottom: 20px;
+    right: 20px;
+    width: 70px; /* Kichikroq */
+    height: 70px;
+  }
+
+  /* Minimapni tepaga ko'taramiz yoki kichraytiramiz, Fire tugmasini yopib qo'ymasligi uchun */
+  #minimapCanvas {
+    width: 100px !important;
+    height: 100px !important;
+  }
+
+  /* Stats (HP/XP) panelini ixchamlashtirish */
+  #gameHUD .absolute.bottom-4.left-1\/2 {
+    bottom: 10px;
+    padding: 4px 10px;
+    gap: 10px;
+  }
+
+  /* Tepadagi ID va Vaqt panelini kichraytirish */
+  #gameHUD .absolute.top-0 {
+    padding: 4px;
+  }
+  #gameTimer {
+    font-size: 1rem;
+  }
+}
+
+/* Juda kichik ekranlar uchun (iPhone SE, eski Androidlar) */
+@media (max-width: 600px) {
+  /* Qo'shilish va Yaratish oynalarini to'liq ekran qilamiz */
+  #createMenu > div,
+  #joinMenu > div {
+    width: 95%;
+    padding: 15px;
+  }
+
+  /* Inputlarni orasini ochamiz */
+  input {
+    padding: 10px;
+    font-size: 14px;
+  }
+}
+
+/* Scrollbar dizayni (Chiroyli ko'rinishi uchun) */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
