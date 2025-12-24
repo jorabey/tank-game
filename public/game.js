@@ -31,13 +31,17 @@ const fireBtn = { active: false, id: null };
 let mouse = { x: 0, y: 0, down: false };
 let lastMobileAngle = 0;
 
-// Timers
+// Timers va Holat
 let respawnInterval = null;
-let randomSearchInterval = null;
-let waitTime = 20;
 let selectedColor = null;
+let lastPingTime = 0;
 
-// Ranglar
+// Ovozli Chat
+let localStream = null;
+let mediaRecorder = null;
+let audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let nextStartTime = 0;
+
 const TANK_COLORS = [
   "#4b5320",
   "#556b2f",
@@ -54,19 +58,15 @@ const TANK_COLORS = [
 
 const customStyles = document.createElement("style");
 customStyles.textContent = `
-    /* Input Fix */
     input, textarea { -webkit-user-select: text !important; user-select: text !important; pointer-events: auto !important; }
-    
     #toastContainer { z-index: 9999 !important; top: 20px !important; }
 
-    /* Rang tanlagich */
     .color-option { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform 0.2s; }
     .color-option:hover { transform: scale(1.1); }
     .color-option.selected { border-color: white; box-shadow: 0 0 10px white; transform: scale(1.2); }
     
     #createColor, #joinColor, #randomColor { display: none !important; }
 
-    /* UI Elementlar */
     #joystickZone { background: rgba(255,255,255,0.1) !important; border: 2px solid rgba(255,255,255,0.3) !important; }
     #joystickKnob { background: rgba(255,255,255,0.8) !important; }
     #fireBtn { width: 100px !important; height: 100px !important; right: 30px !important; bottom: 30px !important; background: rgba(255,0,0,0.3) !important; border: 4px solid rgba(255,100,100,0.6) !important; }
@@ -75,16 +75,20 @@ customStyles.textContent = `
     #killFeed { top: 100px !important; left: 50% !important; transform: translateX(-50%); width: 300px; pointer-events: none; z-index: 80; align-items: center !important; }
     #gameHUD .absolute.bottom-4.right-4 { top: 80px !important; left: 10px !important; bottom: auto !important; right: auto !important; border: 2px solid rgba(255,255,255,0.3); background: rgba(0,0,0,0.8); z-index: 40; }
 
-    /* Exit Modal */
-    #exitModal { background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); z-index: 10000; pointer-events: auto !important; }
-    #exitModal button { pointer-events: auto !important; cursor: pointer; }
+    #exitModal, #helpModal { background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); z-index: 10000; pointer-events: auto !important; }
+    #exitModal button, #helpModal button, #helpModal a { pointer-events: auto !important; cursor: pointer; }
     
+    .control-btn { width: 40px; height: 40px; background: rgba(0,0,0,0.6); border: 1px solid #555; border-radius: 50%; color: white; display: flex; justify-content: center; align-items: center; pointer-events: auto; cursor: pointer; transition: 0.2s; }
+    .control-btn.active { background: #22c55e; border-color: #22c55e; }
+    .control-btn:hover { transform: scale(1.1); }
+
+    #chatModal { background: rgba(0,0,0,0.5); z-index: 9500; }
+
     .red-alert-border { box-shadow: inset 0 0 50px 20px red; animation: pulseAlert 0.5s infinite; }
     @keyframes pulseAlert { 0% { box-shadow: inset 0 0 50px 20px rgba(255,0,0,0.5); } 50% { box-shadow: inset 0 0 100px 40px rgba(255,0,0,0.8); } 100% { box-shadow: inset 0 0 50px 20px rgba(255,0,0,0.5); } }
 `;
 document.head.appendChild(customStyles);
 
-// HTML Elementlarni Inyeksiya qilish
 document.addEventListener("DOMContentLoaded", () => {
   const uiLayer = document.getElementById("uiLayer");
 
@@ -96,14 +100,11 @@ document.addEventListener("DOMContentLoaded", () => {
   randomMenu.innerHTML = `
         <div class="bg-gray-800 p-6 rounded-xl w-full max-w-sm border border-gray-700 mx-4">
             <h2 class="text-xl font-bold mb-4 text-purple-400">Random O'yin</h2>
-            <p class="text-gray-400 text-sm mb-4">Maksimum 3 ta bot qo'shiladi.</p>
-            
             <input type="text" id="randomNick" placeholder="Nickname" class="w-full p-3 mb-3 bg-gray-700 text-white rounded outline-none">
             <input type="color" id="randomColor" value="#3b82f6" class="w-full h-10 mb-6 rounded cursor-pointer">
-            
             <div class="flex gap-3">
-                <button onclick="showScreen('mainMenu')" class="flex-1 py-3 bg-gray-600 text-white rounded font-bold">Orqaga</button>
-                <button onclick="confirmRandomSearch()" class="flex-1 py-3 bg-purple-600 text-white rounded font-bold">Qidirish</button>
+                <button id="btnBackRandom" class="flex-1 py-3 bg-gray-600 text-white rounded font-bold">Orqaga</button>
+                <button id="btnStartRandom" class="flex-1 py-3 bg-purple-600 text-white rounded font-bold">Boshlash</button>
             </div>
         </div>
     `;
@@ -141,11 +142,45 @@ document.addEventListener("DOMContentLoaded", () => {
     `;
   uiLayer.appendChild(exitModal);
 
-  // Modal tugmalarini JS orqali bog'lash (onclick ba'zan ishlamaydi)
-  document.getElementById("btnExitNo").onclick = closeExitModal;
-  document.getElementById("btnExitYes").onclick = confirmExitGame;
+  // 4. Help Modal
+  const helpModal = document.createElement("div");
+  helpModal.id = "helpModal";
+  helpModal.className =
+    "hidden absolute inset-0 flex items-center justify-center";
+  helpModal.innerHTML = `
+        <div class="bg-gray-900 p-8 rounded-2xl border-2 border-blue-500 text-center shadow-2xl relative z-50 max-w-sm w-full mx-4">
+            <h2 class="text-3xl text-blue-400 font-black mb-2 uppercase tracking-wider">Muallif</h2>
+            <p class="text-white text-xl mb-6 font-bold">Sattorov Jo'rabek</p>
+            
+            <div class="space-y-4 mb-8">
+                <a href="https://instagram.com/jorabey.dev" target="_blank" class="block w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg text-white font-bold hover:opacity-90 transform hover:scale-105 transition no-underline">
+                    <i class="fab fa-instagram mr-2"></i> Instagram
+                </a>
+                <a href="https://t.me/jorabeyDev" target="_blank" class="block w-full py-3 bg-blue-500 rounded-lg text-white font-bold hover:bg-blue-600 transform hover:scale-105 transition no-underline">
+                    <i class="fab fa-telegram mr-2"></i> Telegram
+                </a>
+            </div>
+            
+            <button id="btnCloseHelp" class="text-gray-400 hover:text-white underline">Yopish</button>
+        </div>
+    `;
+  uiLayer.appendChild(helpModal);
 
-  // 4. Random Button on Main Menu
+  // 5. Chat Input
+  const chatModal = document.createElement("div");
+  chatModal.id = "chatModal";
+  chatModal.className =
+    "hidden absolute inset-0 flex items-end justify-center pb-20 pointer-events-auto";
+  chatModal.innerHTML = `
+        <div class="bg-gray-800 p-2 rounded-lg flex gap-2 w-full max-w-md mx-4 border border-gray-600 shadow-xl">
+            <input type="text" id="chatInput" class="flex-1 bg-gray-700 text-white px-3 py-2 rounded outline-none" placeholder="Xabar yozing..." maxlength="50">
+            <button id="btnSendChat" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-bold"><i class="fas fa-paper-plane"></i></button>
+            <button id="btnCloseChat" class="bg-red-600 hover:bg-red-500 text-white px-3 py-2 rounded"><i class="fas fa-times"></i></button>
+        </div>
+    `;
+  uiLayer.appendChild(chatModal);
+
+  // 6. Main Menu Buttons
   const mainMenu = document.getElementById("mainMenu");
   if (mainMenu) {
     const btnContainer = mainMenu.querySelector("div.flex-col");
@@ -155,11 +190,24 @@ document.addEventListener("DOMContentLoaded", () => {
       randomBtn.className =
         "py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold shadow-lg text-lg mt-2";
       randomBtn.innerHTML = '<i class="fas fa-random mr-2"></i> RANDOM O\'YIN';
-      randomBtn.onclick = () => {
-        selectedColor = null;
-        showScreen("randomMenu");
-      };
       btnContainer.appendChild(randomBtn);
+
+      const helpBtn = document.createElement("button");
+      helpBtn.id = "btnHelp";
+      helpBtn.className =
+        "mt-4 text-gray-400 hover:text-white underline text-sm";
+      helpBtn.innerHTML =
+        '<i class="fas fa-question-circle"></i> Help & Credits';
+      mainMenu.appendChild(helpBtn);
+    }
+
+    let credit = document.getElementById("creditFooter");
+    if (!credit) {
+      credit = document.createElement("div");
+      credit.id = "creditFooter";
+      credit.className = "absolute bottom-2 text-gray-500 text-xs";
+      credit.innerHTML = "By Sattorov Jo'rabek";
+      mainMenu.appendChild(credit);
     }
 
     const onlineDiv = document.createElement("div");
@@ -170,23 +218,44 @@ document.addEventListener("DOMContentLoaded", () => {
     mainMenu.appendChild(onlineDiv);
   }
 
-  // 5. Fullscreen Button
-  const hudTop = document.querySelector(
-    "#gameHUD .absolute.top-0 .flex.justify-between div:first-child"
-  );
+  // 7. HUD
+  const hudTop = document.querySelector("#gameHUD .absolute.top-0");
   if (hudTop) {
+    const pingDiv = document.createElement("div");
+    pingDiv.className =
+      "absolute top-12 left-2 text-green-400 font-mono text-xs bg-gray-900/50 px-2 py-1 rounded";
+    pingDiv.innerHTML = 'Ping: <span id="pingVal">0</span>ms';
+    hudTop.appendChild(pingDiv);
+
+    const controlsDiv = document.createElement("div");
+    controlsDiv.className =
+      "absolute top-20 left-2 flex flex-col gap-2 pointer-events-auto";
+    controlsDiv.innerHTML = `
+            <button id="btnMic" class="control-btn"><i class="fas fa-microphone-slash"></i></button>
+            <button id="btnSpeaker" class="control-btn active"><i class="fas fa-volume-up"></i></button>
+            <button id="btnChat" class="control-btn bg-blue-600/60 border-blue-500"><i class="fas fa-comment-dots"></i></button>
+        `;
+    hudTop.appendChild(controlsDiv);
+
+    const leftBox = hudTop.querySelector(
+      ".flex.justify-between div:first-child"
+    );
     const fsBtn = document.createElement("button");
+    fsBtn.id = "btnFullscreen";
     fsBtn.innerHTML = '<i class="fas fa-expand"></i>';
     fsBtn.className =
       "ml-2 w-6 h-6 bg-gray-700 rounded flex items-center justify-center text-white text-xs hover:bg-gray-600 pointer-events-auto";
-    fsBtn.onclick = toggleFullScreen;
-    hudTop.appendChild(fsBtn);
+    leftBox.appendChild(fsBtn);
   }
 
   createColorPicker("createColor");
   createColorPicker("joinColor");
   createColorPicker("randomColor");
 
+  // TUGMALARNI ULASHNI BOSHLASH
+  attachEventListeners();
+
+  // Mobile Input Fix
   document.querySelectorAll("input").forEach((input) => {
     input.addEventListener(
       "touchstart",
@@ -197,6 +266,29 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   });
 });
+
+// --- FUNKSIYALAR ---
+
+function generateObstacles() {
+  obstacles = [];
+  const count = 200;
+  for (let i = 0; i < count; i++) {
+    const x = ((i * 1234567) % (WORLD_SIZE - 200)) + 100;
+    const y = ((i * 7654321) % (WORLD_SIZE - 200)) + 100;
+    const seed = i % 10;
+    let type, radius, width, height;
+    if (seed < 3) {
+      type = "wall";
+      width = 80;
+      height = 80;
+      radius = 50;
+    } else {
+      type = "bush";
+      radius = seed % 2 === 0 ? 60 : 40;
+    }
+    obstacles.push({ x, y, type, radius, width, height });
+  }
+}
 
 function createColorPicker(containerId) {
   const input = document.getElementById(containerId);
@@ -216,11 +308,20 @@ function createColorPicker(containerId) {
       circle.classList.add("selected");
       selectedColor = color;
     };
+    circle.ontouchend = (e) => {
+      e.preventDefault();
+      container
+        .querySelectorAll(".color-option")
+        .forEach((c) => c.classList.remove("selected"));
+      circle.classList.add("selected");
+      selectedColor = color;
+    };
     pickerDiv.appendChild(circle);
   });
   input.insertAdjacentElement("beforebegin", pickerDiv);
 }
 
+// Barcha oynalarni yashirib, keraklisini ochish
 function showScreen(screenId) {
   const screens = [
     "mainMenu",
@@ -235,6 +336,13 @@ function showScreen(screenId) {
     const el = document.getElementById(id);
     if (el) el.classList.add("hidden");
   });
+
+  // Modallarni ham yopish
+  ["exitModal", "helpModal", "chatModal"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add("hidden");
+  });
+
   const target = document.getElementById(screenId);
   if (target) target.classList.remove("hidden");
 }
@@ -245,160 +353,242 @@ function getFinalColor() {
   );
 }
 
-// Global window funksiyalari
-window.showScreen = showScreen;
-window.closeExitModal = function () {
-  document.getElementById("exitModal").classList.add("hidden");
-};
-window.confirmExitGame = function () {
-  window.closeExitModal();
-  socket.emit("leave_game");
-  location.reload();
-};
-window.toggleFullScreen = function () {
-  if (!document.fullscreenElement) {
-    document.documentElement
-      .requestFullscreen()
-      .catch((err) => console.log(err));
-  } else {
-    if (document.exitFullscreen) document.exitFullscreen();
-  }
-};
+function safeFullScreen() {
+  try {
+    const doc = window.document;
+    const docEl = doc.documentElement;
+    const requestFullScreen =
+      docEl.requestFullscreen ||
+      docEl.mozRequestFullScreen ||
+      docEl.webkitRequestFullScreen ||
+      docEl.msRequestFullscreen;
 
-// --- RANDOM O'YIN ---
-window.confirmRandomSearch = function () {
-  const nick = document.getElementById("randomNick").value.trim();
-  if (!nick) return showToast("Nickname yozing!", "error");
-
-  showScreen("waitingScreen");
-  waitTime = 20;
-  document.getElementById("waitTimer").innerText = waitTime;
-  document.getElementById("waitProgress").style.width = "0%";
-
-  socket.emit("find_random_game", { nick: nick, color: getFinalColor() });
-
-  if (randomSearchInterval) clearInterval(randomSearchInterval);
-  randomSearchInterval = setInterval(() => {
-    waitTime--;
-    document.getElementById("waitTimer").innerText = waitTime;
-    document.getElementById("waitProgress").style.width = `${
-      (20 - waitTime) * 5
-    }%`;
-    if (waitTime <= 0) clearInterval(randomSearchInterval);
-  }, 1000);
-};
-
-window.cancelRandomSearch = function () {
-  if (randomSearchInterval) clearInterval(randomSearchInterval);
-  socket.emit("leave_random_queue");
-  showScreen("mainMenu");
-};
-
-// --- XARITA ---
-function generateObstacles() {
-  obstacles = [];
-  const count = 150;
-  for (let i = 0; i < count; i++) {
-    const x = ((i * 1234567) % (WORLD_SIZE - 200)) + 100;
-    const y = ((i * 7654321) % (WORLD_SIZE - 200)) + 100;
-    const seed = i % 10;
-    let type, radius, width, height;
-
-    if (seed < 3) {
-      type = "wall";
-      width = 60;
-      height = 60;
-      radius = 40;
-    } else {
-      type = "bush";
-      radius = seed % 2 === 0 ? 50 : 30;
+    if (
+      !doc.fullscreenElement &&
+      !doc.mozFullScreenElement &&
+      !doc.webkitFullscreenElement &&
+      !doc.msFullscreenElement
+    ) {
+      if (requestFullScreen) requestFullScreen.call(docEl).catch(() => {});
     }
-    obstacles.push({ x, y, type, radius, width, height });
-  }
+  } catch (e) {}
 }
 
-// Tugmalarni bog'lash
-const btnShowCreate = document.getElementById("btnShowCreate");
-if (btnShowCreate)
-  btnShowCreate.onclick = () => {
+// --- TUGMALARNI ULASH FUNKSIYASI ---
+function attachEventListeners() {
+  const attachBtn = (id, callback) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.onclick = (e) => {
+      e.preventDefault();
+      callback();
+    };
+    el.ontouchend = (e) => {
+      e.preventDefault();
+      callback();
+    };
+  };
+
+  attachBtn("btnShowCreate", () => {
     selectedColor = null;
     showScreen("createMenu");
-  };
-
-const btnShowJoin = document.getElementById("btnShowJoin");
-if (btnShowJoin)
-  btnShowJoin.onclick = () => {
+  });
+  attachBtn("btnShowJoin", () => {
     selectedColor = null;
     showScreen("joinMenu");
-  };
+  });
+  attachBtn("btnRandomMenu", () => {
+    selectedColor = null;
+    showScreen("randomMenu");
+  });
 
-const btnBackFromCreate = document.getElementById("btnBackFromCreate");
-if (btnBackFromCreate) btnBackFromCreate.onclick = () => showScreen("mainMenu");
+  attachBtn("btnBackFromCreate", () => showScreen("mainMenu"));
+  attachBtn("btnBackFromJoin", () => showScreen("mainMenu"));
+  attachBtn("btnBackRandom", () => showScreen("mainMenu"));
 
-const btnBackFromJoin = document.getElementById("btnBackFromJoin");
-if (btnBackFromJoin) btnBackFromJoin.onclick = () => showScreen("mainMenu");
-
-// Create Game
-const btnStartGame = document.getElementById("btnStartGame");
-if (btnStartGame)
-  btnStartGame.onclick = () => {
+  attachBtn("btnStartGame", () => {
     const nick = document.getElementById("createNick").value.trim();
     if (!nick) return showToast("Nickname yozing!", "error");
-
-    // Validatsiya
-    let maxP = parseInt(document.getElementById("createMaxPlayers").value);
-    let time = parseFloat(document.getElementById("createTime").value);
-
-    if (maxP < 2) maxP = 2;
-    if (maxP > 10) maxP = 10;
-    if (time < 0.5) time = 0.5;
-    if (time > 60) time = 60;
-
+    safeFullScreen();
+    const maxP = document.getElementById("createMaxPlayers").value;
+    const time = document.getElementById("createTime").value;
     const pass = document.getElementById("createPass").value;
     hasPassword = !!pass;
-
     socket.emit("create_game", {
-      nick: nick,
+      nick,
       maxPlayers: maxP,
-      time: time,
-      pass: pass,
+      time,
+      pass,
       color: getFinalColor(),
     });
-  };
+  });
 
-// Join Game
-const btnJoinGame = document.getElementById("btnJoinGame");
-if (btnJoinGame)
-  btnJoinGame.onclick = () => {
+  attachBtn("btnJoinGame", () => {
     const id = document.getElementById("joinId").value.trim();
     const nick = document.getElementById("joinNick").value.trim();
     if (!id || !nick) return showToast("ID va Nickname kerak!", "error");
+    safeFullScreen();
     const pass = document.getElementById("joinPass").value;
     hasPassword = !!pass;
     socket.emit("join_game", {
       gameId: id,
-      nick: nick,
-      pass: pass,
+      nick,
+      pass,
       color: getFinalColor(),
     });
-  };
+  });
 
-// Exit Button (Modalni ochish)
-const btnExit = document.getElementById("btnExit");
-if (btnExit)
-  btnExit.onclick = () => {
-    document.getElementById("exitModal").classList.remove("hidden");
-  };
+  attachBtn("btnStartRandom", () => {
+    const nick = document.getElementById("randomNick").value.trim();
+    if (!nick) return showToast("Nickname yozing!", "error");
+    safeFullScreen();
+    showToast("Random o'yin qidirilmoqda...", "info");
+    socket.emit("find_random_game", { nick: nick, color: getFinalColor() });
+  });
 
-const btnCopyId = document.getElementById("btnCopyId");
-if (btnCopyId)
-  btnCopyId.onclick = () => {
+  attachBtn("btnExit", () =>
+    document.getElementById("exitModal").classList.remove("hidden")
+  );
+  attachBtn("btnExitNo", () =>
+    document.getElementById("exitModal").classList.add("hidden")
+  );
+  attachBtn("btnExitYes", () => {
+    document.getElementById("exitModal").classList.add("hidden");
+    socket.emit("leave_game");
+    location.reload();
+  });
+
+  attachBtn("btnHelp", () =>
+    document.getElementById("helpModal").classList.remove("hidden")
+  );
+  attachBtn("btnCloseHelp", () =>
+    document.getElementById("helpModal").classList.add("hidden")
+  );
+
+  attachBtn("btnCopyId", () => {
     const txt = document
       .getElementById("displayGameId")
       .innerText.replace(/\s/g, "");
     navigator.clipboard.writeText(txt);
     showToast("ID nusxalandi!", "success");
-  };
+  });
+
+  attachBtn("btnChat", () => toggleChat(true));
+  attachBtn("btnCloseChat", () => toggleChat(false));
+  attachBtn("btnSendChat", sendChat);
+
+  attachBtn("btnMic", toggleMic);
+  attachBtn("btnSpeaker", toggleSpeaker);
+  attachBtn("btnFullscreen", safeFullScreen);
+}
+
+// --- CHAT SYSTEM ---
+function toggleChat(show) {
+  const modal = document.getElementById("chatModal");
+  if (show) {
+    modal.classList.remove("hidden");
+    setTimeout(() => document.getElementById("chatInput").focus(), 100);
+  } else {
+    modal.classList.add("hidden");
+    document.getElementById("chatInput").blur();
+  }
+}
+
+function sendChat() {
+  const input = document.getElementById("chatInput");
+  const msg = input.value.trim();
+  if (msg) {
+    socket.emit("send_chat", msg);
+  }
+  input.value = "";
+  toggleChat(false);
+}
+
+function displayChatMessage(sender, msg) {
+  const feed = document.getElementById("killFeed");
+  if (!feed) return;
+  const item = document.createElement("div");
+  item.className =
+    "text-white bg-blue-900/90 px-4 py-2 rounded-lg text-sm mb-2 border border-blue-500 shadow-md flex flex-col items-start w-full animate-pulse";
+  item.innerHTML = `<span class="text-yellow-400 font-bold text-xs">${sender}:</span><span class="text-white">${msg}</span>`;
+  feed.prepend(item);
+  setTimeout(() => item.remove(), 15000);
+  if (feed.children.length > 5) feed.lastChild.remove();
+}
+
+socket.on("receive_chat", (data) => {
+  displayChatMessage(data.sender, data.msg);
+});
+
+// --- VOICE CHAT ---
+let micOn = false;
+let speakerOn = true;
+
+function toggleMic() {
+  micOn = !micOn;
+  const btn = document.getElementById("btnMic");
+  btn.className = `control-btn ${micOn ? "active" : ""}`;
+  btn.innerHTML = micOn
+    ? '<i class="fas fa-microphone"></i>'
+    : '<i class="fas fa-microphone-slash"></i>';
+  if (micOn) startVoice();
+  else stopVoice();
+}
+
+function toggleSpeaker() {
+  speakerOn = !speakerOn;
+  const btn = document.getElementById("btnSpeaker");
+  btn.className = `control-btn ${speakerOn ? "active" : ""}`;
+  btn.innerHTML = speakerOn
+    ? '<i class="fas fa-volume-up"></i>'
+    : '<i class="fas fa-volume-mute"></i>';
+  if (speakerOn) {
+    if (audioContext.state === "suspended") audioContext.resume();
+  } else {
+    audioContext.suspend();
+  }
+}
+
+async function startVoice() {
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(localStream);
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0 && gameActive) {
+        e.data.arrayBuffer().then((buffer) => {
+          socket.emit("voice_data", buffer);
+        });
+      }
+    };
+    mediaRecorder.start(250);
+    showToast("Mikrofon yoqildi", "success");
+  } catch (err) {
+    micOn = false;
+    document.getElementById("btnMic").className = "control-btn";
+    document.getElementById("btnMic").innerHTML =
+      '<i class="fas fa-microphone-slash"></i>';
+    showToast("Mikrofon xatosi: " + err.message, "error");
+  }
+}
+
+function stopVoice() {
+  if (mediaRecorder) mediaRecorder.stop();
+  if (localStream) localStream.getTracks().forEach((t) => t.stop());
+}
+
+socket.on("voice_data", async (arrayBuffer) => {
+  if (!speakerOn || !gameActive) return;
+  try {
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    const source = audioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioContext.destination);
+    if (nextStartTime < audioContext.currentTime)
+      nextStartTime = audioContext.currentTime;
+    source.start(nextStartTime);
+    nextStartTime += audioBuffer.duration;
+  } catch (e) {}
+});
 
 function showToast(msg, type) {
   const container = document.getElementById("toastContainer");
@@ -419,20 +609,15 @@ socket.on("online_count", (count) => {
   const el = document.getElementById("onlineCountVal");
   if (el) el.innerText = count;
 });
-socket.on("queue_update", (data) => {
-  const el = document.getElementById("waitPlayerCount");
-  if (el) el.innerText = data.current;
-});
 
 socket.on("disconnect", () => {
   if (gameActive) {
-    alert("Server bilan aloqa uzildi!");
-    location.reload();
+    showToast("Server bilan aloqa uzildi!", "error");
+    setTimeout(() => location.reload(), 2000);
   }
 });
 
 socket.on("game_started", (data) => {
-  if (randomSearchInterval) clearInterval(randomSearchInterval);
   myId = data.playerId;
   const dispId = document.getElementById("displayGameId");
   const icon = hasPassword
@@ -443,6 +628,8 @@ socket.on("game_started", (data) => {
   generateObstacles();
   showScreen("gameHUD");
   gameActive = true;
+
+  if (audioContext.state === "suspended") audioContext.resume();
 
   if (
     /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
@@ -478,26 +665,8 @@ socket.on("update_state", (data) => {
   const uiLayer = document.getElementById("uiLayer");
   if (timeLeft < 6000 && timeLeft > 0) {
     uiLayer.classList.add("red-alert-border");
-    let alertNum = document.getElementById("alertCountdown");
-    if (!alertNum) {
-      alertNum = document.createElement("div");
-      alertNum.id = "alertCountdown";
-      alertNum.style.position = "absolute";
-      alertNum.style.top = "30%";
-      alertNum.style.left = "50%";
-      alertNum.style.transform = "translate(-50%, -50%)";
-      alertNum.style.fontSize = "120px";
-      alertNum.style.fontWeight = "bold";
-      alertNum.style.color = "#ef4444";
-      alertNum.style.zIndex = "100";
-      alertNum.style.textShadow = "0 0 20px black";
-      document.getElementById("uiLayer").appendChild(alertNum);
-    }
-    alertNum.innerText = totalSecs;
   } else {
     uiLayer.classList.remove("red-alert-border");
-    const alertNum = document.getElementById("alertCountdown");
-    if (alertNum) alertNum.remove();
   }
 
   updateHUD();
@@ -519,11 +688,7 @@ socket.on("kill_feed", (data) => {
     "text-white bg-gray-900/80 px-4 py-2 rounded-full text-sm mb-2 font-bold border border-gray-600 shadow-md flex items-center gap-2";
   item.innerHTML = `<span style="color:#60a5fa">${data.killer}</span> <i class="fas fa-skull-crossbones text-gray-400"></i> <span style="color:#f87171">${data.victim}</span>`;
   feed.prepend(item);
-  setTimeout(() => {
-    item.style.transition = "opacity 0.5s";
-    item.style.opacity = "0";
-    setTimeout(() => item.remove(), 500);
-  }, 3000);
+  setTimeout(() => item.remove(), 3000);
   if (feed.children.length > 3) feed.lastChild.remove();
 });
 
@@ -566,12 +731,11 @@ socket.on("game_over", (finalPlayers) => {
 
   let t = 15;
   const timerEl = document.getElementById("autoExitTimer");
-  if (window.endGameInterval) clearInterval(window.endGameInterval);
-  window.endGameInterval = setInterval(() => {
+  const interval = setInterval(() => {
     t--;
     if (timerEl) timerEl.innerText = t;
     if (t <= 0) {
-      clearInterval(window.endGameInterval);
+      clearInterval(interval);
       location.reload();
     }
   }, 1000);
@@ -617,16 +781,11 @@ function checkCollision(x, y) {
       const cornerDistance_sq =
         (circleDistanceX - halfW) ** 2 + (circleDistanceY - halfH) ** 2;
       if (cornerDistance_sq <= tankRadius ** 2) return true;
-    } else if (obs.type === "rock") {
-      const dx = x - obs.x;
-      const dy = y - obs.y;
-      if (Math.sqrt(dx * dx + dy * dy) < tankRadius + obs.radius) return true;
     }
   }
   return false;
 }
 
-// O'qning to'siqqa urilishini vizual tekshirish
 function checkBulletWallCollision(bx, by) {
   for (const obs of obstacles) {
     if (obs.type === "bush") continue;
@@ -640,10 +799,6 @@ function checkBulletWallCollision(bx, by) {
         by <= obs.y + halfH
       )
         return true;
-    } else if (obs.type === "rock") {
-      const dx = bx - obs.x;
-      const dy = by - obs.y;
-      if (dx * dx + dy * dy < obs.radius * obs.radius) return true;
     }
   }
   return false;
@@ -738,7 +893,6 @@ function render() {
   ctx.shadowColor = "orange";
 
   bullets.forEach((b, index) => {
-    // O'q to'siqqa urilsa, uni chizmaymiz va portlash effektini ko'rsatamiz
     if (checkBulletWallCollision(b.x, b.y)) {
       createExplosion(b.x, b.y);
       bullets.splice(index, 1);
@@ -782,6 +936,18 @@ function drawGrid() {
   const size = 200;
   const startX = Math.floor(camera.x / size) * size;
   const startY = Math.floor(camera.y / size) * size;
+  ctx.strokeStyle = "rgba(0,0,0,0.1)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let x = startX; x < camera.x + canvas.width + size; x += 100) {
+    ctx.moveTo(x, camera.y);
+    ctx.lineTo(x, camera.y + canvas.height + size);
+  }
+  for (let y = startY; y < camera.y + canvas.height + size; y += 100) {
+    ctx.moveTo(camera.x, y);
+    ctx.lineTo(camera.x + canvas.width + size, y);
+  }
+  ctx.stroke();
   ctx.fillStyle = "#4a5d3f";
   for (let x = startX; x < camera.x + canvas.width + size; x += 50) {
     for (let y = startY; y < camera.y + canvas.height + size; y += 50) {
@@ -1021,7 +1187,7 @@ function createExplosion(x, y) {
 }
 
 // =========================================================
-// 5. INPUT HANDLERS
+// 5. INPUT HANDLERS (TUZATILGAN)
 // =========================================================
 
 window.addEventListener("keydown", (e) => {
@@ -1037,14 +1203,32 @@ window.addEventListener("mousemove", (e) => {
 window.addEventListener("mousedown", () => (mouse.down = true));
 window.addEventListener("mouseup", () => (mouse.down = false));
 
+// Ping
+setInterval(() => {
+  if (gameActive) {
+    lastPingTime = Date.now();
+    socket.emit("ping_check", () => {
+      const latency = Date.now() - lastPingTime;
+      const el = document.getElementById("pingVal");
+      if (el) {
+        el.innerText = latency;
+        el.style.color =
+          latency > 200 ? "red" : latency > 100 ? "yellow" : "lime";
+      }
+    });
+  }
+}, 2000);
+
 const joyZone = document.getElementById("joystickZone");
 const joyKnob = document.getElementById("joystickKnob");
 const fireBtnEl = document.getElementById("fireBtn");
 const joyCenter = { x: 70, y: 70 };
 
+// Click eventlari touchmove bilan bloklanmasligi uchun
 document.body.addEventListener(
   "touchmove",
   function (e) {
+    // Faqat o'yin vaqtida va control zonalarida bloklaymiz
     if (!gameActive) return;
     if (
       e.target === joyZone ||
